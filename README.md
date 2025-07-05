@@ -4,9 +4,9 @@
 1.  [Pendahuluan](#1-pendahuluan)
 2.  [Fitur & Teknologi](#2-fitur--teknologi)
 3.  [Arsitektur Proyek](#3-arsitektur-proyek)
-4.  [Cara Menjalankan Pipeline Data](#6-cara-menjalankan-pipeline-data)
-5.  [Model Data Normalized (ER Diagram)](#7-model-data-normalized-er-diagram)
-6.  [Proses Normalisasi Data (Per Normal Form)](#8-proses-normalisasi-data-per-normal-form)
+4.  [Cara Menjalankan Pipeline Data](#4-cara-menjalankan-pipeline-data)
+5.  [Model Data Normalized (ER Diagram)](#5-model-data-normalized-er-diagram)
+6.  [Proses Normalisasi Data (Per Normal Form)](#6-proses-normalisasi-data-per-normal-form)
 
 ---
 
