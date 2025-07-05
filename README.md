@@ -46,11 +46,11 @@ Proyek ini mengikuti arsitektur ELT (Extract, Load, Transform) yang dikontaineri
 * **Bangun dan Jalankan Docker Compose:**
     Perintah ini akan membuat dan menjalankan kontainer PostgreSQL serta kontainer aplikasi Python Anda. Kontainer PostgreSQL akan otomatis membuat skema `staging`, `raw`, dan `normalized` saat pertama kali dijalankan.
     ```bash
-    docker compose up -d --build
+    docker compose up -d 
     ```
     `-d`: Menjalankan kontainer di latar belakang (detached mode).
 
-    Skrip `main.py` dirancang untuk memproses satu file data *end-to-end* (Ekstraksi, Pemuatan, Transformasi, Normalisasi) per panggilan. Anda akan menjalankannya melalui kontainer Docker `ny_taxi_data_processor`.
+    Skrip `main.py` dirancang untuk memproses satu file data *end-to-end* (Ekstraksi, Pemuatan, Transformasi, Normalisasi) per panggilan. Anda akan menjalankannya melalui kontainer Docker `data_processor`.
 
 * **Sintaks Umum:**
     ```bash
@@ -66,26 +66,24 @@ Proyek ini mengikuti arsitektur ELT (Extract, Load, Transform) yang dikontaineri
 ## 5. Model Data Normalized (ER Diagram)
 
 Data di skema normalized diatur dalam struktur Star Schema untuk optimalisasi analisis dan pelaporan. Tabel fact_trips adalah tabel fakta pusat, terhubung ke berbagai tabel dimensi yang menyimpan atribut deskriptif unik.
+
 ![ER Diagram](images/1.png)
 
 ## 6. Proses Normalisasi Data (Per Normal Form)
 
 Proses normalisasi bertujuan untuk mengurangi redundansi data dan meningkatkan integritas data. Berikut adalah tahapan normalisasi yang diterapkan pada data perjalanan taksi:
 
-0. Kondisi Awal (Tabel Denormalisasi)
-Data awal di raw.all_taxi_trips_raw adalah tabel lebar yang mengandung banyak detail perjalanan dalam satu baris, dengan potensi redundansi untuk atribut yang bergantung pada ID tertentu (misalnya, deskripsi vendor, zona lokasi).
+### 0. Kondisi Awal (Tabel Denormalisasi)
+Data awal di `raw.all_taxi_trips_raw` adalah tabel lebar yang mengandung banyak detail perjalanan dalam satu baris, dengan potensi redundansi untuk atribut yang bergantung pada ID tertentu (misalnya, deskripsi vendor, zona lokasi).
 
-1. First Normal Form (1NF)
-Definisi: Setiap kolom berisi nilai tunggal (atomik) dan tidak ada grup berulang. Setiap baris unik.
+### 1. First Normal Form (1NF)
+* **Definisi:** Setiap kolom berisi nilai tunggal (atomik) dan tidak ada grup berulang. Setiap baris unik.
+* **Penerapan:** Data yang dimuat ke skema `raw` sudah memenuhi 1NF. Proses *parsing* file Parquet/CSV dan penanganan konsolidasi kolom `pickup_datetime`/`dropoff_datetime` memastikan atomisitas dan tidak adanya grup berulang.
 
-Penerapan: Data yang dimuat ke skema raw sudah memenuhi 1NF. Proses parsing file Parquet/CSV dan penanganan konsolidasi kolom pickup_datetime/dropoff_datetime memastikan atomisitas dan tidak adanya grup berulang.
+### 2. Second Normal Form (2NF)
+* **Definisi:** Sudah dalam 1NF, dan semua atribut non-kunci sepenuhnya bergantung pada *seluruh* Primary Key.
+* **Penerapan:** Tabel `raw.all_taxi_trips_raw` memiliki Primary Key komposit yang besar. Atribut seperti `zone`, `borough` (yang bergantung hanya pada `location_id`), atau deskripsi `payment_type` (yang bergantung hanya pada `payment_type_id`) merupakan *partial dependency*. Untuk mengatasi ini, atribut-atribut ini dipindahkan ke tabel dimensi terpisah (`dim_location`, `dim_vendor`, `dim_payment_type`, `dim_rate_code`, `dim_date`, `dim_time`), di mana setiap atribut non-kunci di tabel dimensi tersebut sepenuhnya bergantung pada Primary Key tabel dimensi itu sendiri.
 
-2. Second Normal Form (2NF)
-Definisi: Sudah dalam 1NF, dan semua atribut non-kunci sepenuhnya bergantung pada seluruh Primary Key.
-
-Penerapan: Tabel raw.all_taxi_trips_raw memiliki Primary Key komposit yang besar. Atribut seperti zone, borough (yang bergantung hanya pada location_id), atau deskripsi payment_type (yang bergantung hanya pada payment_type_id) merupakan partial dependency. Untuk mengatasi ini, atribut-atribut ini dipindahkan ke tabel dimensi terpisah (dim_location, dim_vendor, dim_payment_type, dim_rate_code, dim_date, dim_time), di mana setiap atribut non-kunci di tabel dimensi tersebut sepenuhnya bergantung pada Primary Key tabel dimensi itu sendiri.
-
-3. Third Normal Form (3NF)
-Definisi: Sudah dalam 2NF, dan tidak ada transitive dependency (tidak ada atribut non-kunci yang bergantung pada atribut non-kunci lainnya).
-
-Penerapan: Dengan pemisahan ke tabel-tabel dimensi, kami memastikan bahwa semua atribut non-kunci di setiap tabel dimensi secara langsung bergantung pada Primary Key tabel dimensi tersebut. Tabel fact_trips kemudian menyimpan metrik perjalanan dan Foreign Key ke tabel-tabel dimensi, memastikan bahwa semua metrik secara langsung bergantung pada kombinasi Foreign Key yang membentuk Primary Key tabel fakta. Ini secara efektif menghilangkan ketergantungan transitif.
+### 3. Third Normal Form (3NF)
+* **Definisi:** Sudah dalam 2NF, dan tidak ada *transitive dependency* (tidak ada atribut non-kunci yang bergantung pada atribut non-kunci lainnya).
+* **Penerapan:** Dengan pemisahan ke tabel-tabel dimensi, kami memastikan bahwa semua atribut non-kunci di setiap tabel dimensi secara langsung bergantung pada Primary Key tabel dimensi tersebut. Tabel `fact_trips` kemudian menyimpan metrik perjalanan dan Foreign Key ke tabel-tabel dimensi, memastikan bahwa semua metrik secara langsung bergantung pada kombinasi Foreign Key yang membentuk Primary Key tabel fakta. Ini secara efektif menghilangkan ketergantungan transitif.
