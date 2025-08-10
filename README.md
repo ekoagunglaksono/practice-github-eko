@@ -1,89 +1,83 @@
-# Capstone Project Module 2: NYC Taxi Data Engineering Pipeline
+# Capstone Project Modul 3: Medical Claims Data Pipeline
 
-## Daftar Isi
-1.  [Pendahuluan](#1-pendahuluan)
-2.  [Fitur & Teknologi](#2-fitur--teknologi)
-3.  [Arsitektur Proyek](#3-arsitektur-proyek)
-4.  [Cara Menjalankan Pipeline Data](#4-cara-menjalankan-pipeline-data)
-5.  [Model Data Normalized (ER Diagram)](#5-model-data-normalized-er-diagram)
-6.  [Proses Normalisasi Data (Per Normal Form)](#6-proses-normalisasi-data-per-normal-form)
+## Tujuan Proyek (Business Case)
 
----
+Proyek ini bertujuan untuk membangun sebuah pipeline data end-to-end yang sepenuhnya otomatis untuk menganalisis total biaya klaim medis. Analisis ini didasarkan pada demografi pasien (jenis kelamin) serta tren waktu. Hasil analisis ini akan divisualisasikan melalui dashboard untuk memberikan wawasan yang dapat membantu pengambilan keputusan.
 
-## 1. Pendahuluan
+## Arsitektur Sistem
 
-Proyek Capstone Modul 2 ini adalah implementasi *pipeline* Data Engineering end-to-end yang berfokus pada ekstraksi, pemuatan, transformasi, dan normalisasi data perjalanan taksi New York City (NYC). Proyek ini dirancang untuk mengaplikasikan pengetahuan SQL, Relational Database Management System, dan prinsip-prinsip pengembangan perangkat lunak (OOP, modularitas) dalam skenario dunia nyata.
+Pipeline ini dirancang dengan pendekatan Extract, Load, Transform (ELT) dan diorkestrasi menggunakan Apache Airflow. Data mengalir melalui beberapa tahapan yang terstruktur:
 
-Data yang digunakan adalah dataset perjalanan taksi Yellow dan Green dari NYC Taxi & Limousine Commission (TLC), serta data *lookup* zona taksi.
+1. Sumber Data: Data klaim medis diunduh secara programatis.
+2. Raw Layer (BigQuery): Data mentah disimpan tanpa modifikasi.
+3. Staging Layer (BigQuery): Data dibersihkan dan distandarisasi menggunakan dbt.
+4. Model Layer (BigQuery): Data ditransformasi menjadi model data bintang (star schema) yang terdiri dari tabel fakta dan dimensi.
+5. Mart Layer (BigQuery): Data diagregasi untuk kebutuhan dashboard yang spesifik.
+6. Dashboard: Data dari layer mart digunakan untuk visualisasi di Looker Studio.
+7. Orkestrasi: Seluruh alur kerja diotomatisasi menggunakan Apache Airflow.
 
-## 2. Fitur & Teknologi
+![arsitektur](images/Arsitektur.png)
 
-* **Ekstraksi & Pemuatan Data:** Mengunduh file data Parquet/CSV dari URL dan memuatnya secara efisien ke database PostgreSQL.
-* **Transformasi Data (SQL Murni):** Pembersihan, standardisasi, dan konsolidasi data dari skema `staging` ke skema `raw` sepenuhnya menggunakan sintaks SQL yang dieksekusi dari Python.
-* **Normalisasi Data (SQL Murni):** Normalisasi data hingga Third Normal Form (3NF) dari skema `raw` (dan `staging` untuk lokasi) ke skema `normalized` menggunakan SQL yang dieksekusi dari Python, menghasilkan struktur Star Schema.
-* **Manajemen Database:** Menggunakan PostgreSQL sebagai database relasional.
-* **Orkestrasi & Kontainerisasi:** Seluruh *pipeline* dijalankan dalam lingkungan Docker menggunakan skrip Python (OOP).
-* **Reusability & Resilience:**
-    * Kode Python yang modular, berorientasi objek (OOP), dan parameterized.
-    * Setiap *run* memproses satu file secara *end-to-end* untuk memastikan idempotensi (menghindari duplikasi data).
-    * Penanganan error yang robust.
-* **Alat Bantu:**
-    * **Docker:** Untuk kontainerisasi PostgreSQL dan aplikasi Python.
-    * **Python:** Bahasa pemrograman utama untuk orkestrasi dan interaksi database.
-    * **SQL (PostgreSQL Dialect):** Untuk transformasi dan normalisasi data.
-    * **SQLAlchemy:** ORM Python untuk berinteraksi dengan database.
-    * **Pandas:** Untuk membaca file Parquet/CSV ke DataFrame sebelum loading awal.
-    * **CloudBeaver:** Database *browser* berbasis web untuk akses dan monitoring database.
+## Sumber Data
 
-## 3. Arsitektur Proyek
+Proyek ini menggunakan dataset MedicalClaimsSynthetic1M.csv yang diperoleh dari Kaggle. Proses pengunduhan data ke folder lokal dilakukan secara programatis menggunakan skrip Python (download_kaggle_data.py), yang kemudian dimuat ke dalam layer raw BigQuery melalui skrip ingest_to_bigquery.py.
 
-Proyek ini mengikuti arsitektur ELT (Extract, Load, Transform) yang dikontainerisasi, di mana data dimuat ke *staging area* sebelum transformasi dan normalisasi.
+## Transformasi Data (DBT)
 
-![Diagram Arsitektur](images/2.png)
+DBT (Data Build Tool) digunakan untuk semua proses transformasi data di dalam BigQuery. Terdapat beberapa model yang dibuat:
 
-## 4. Cara Menjalankan Pipeline Data
+* **Model Staging (stg_cms_claims.sql):** Membersihkan, menstandardisasi nama kolom, dan menghitung total_claim_cost dari data mentah. Model ini juga menyaring data dengan biaya klaim negatif.
 
-* **Bangun dan Jalankan Docker Compose:**
-    Perintah ini akan membuat dan menjalankan kontainer PostgreSQL serta kontainer aplikasi Python Anda. Kontainer PostgreSQL akan otomatis membuat skema `staging`, `raw`, dan `normalized` saat pertama kali dijalankan.
-    ```bash
-    docker compose up -d 
-    ```
-    `-d`: Menjalankan kontainer di latar belakang (detached mode).
+* **Model Dimensi:**
 
-    Skrip `main.py` dirancang untuk memproses satu file data *end-to-end* (Ekstraksi, Pemuatan, Transformasi, Normalisasi) per panggilan. Anda akan menjalankannya melalui kontainer Docker `data_processor`.
+    * dim_patient.sql: Membuat tabel dimensi pasien yang berisi informasi unik tentang demografi seperti usia, jenis kelamin, dan lokasi.
 
-* **Sintaks Umum:**
-    ```bash
-    docker compose run --rm data_processor python app/main.py --type <taxi_type_or_lookup> --year <year> --month <month>
+    * dim_date.sql: Membuat tabel dimensi tanggal untuk analisis berbasis waktu.
 
-    --rm: Menghapus kontainer setelah eksekusi selesai.
-    data_processor: Nama layanan kontainer aplikasi Python dari docker-compose.yaml.
-    python app/main.py: Menjalankan skrip Python utama.
-    --type: Jenis data (misal: yellow_taxi, green_taxi, taxi_zone_lookup).
-    --year: Tahun data (hanya untuk yellow_taxi dan green_taxi).
-    --month: Bulan data (hanya untuk yellow_taxi dan green_taxi).
+* **Model Fakta (fct_claims.sql):** Tabel fakta yang berisi metrik biaya klaim dan kunci-kunci untuk terhubung ke tabel dimensi.
 
-## 5. Model Data Normalized (ER Diagram)
+* **Model Mart:**
 
-Data di skema normalized diatur dalam struktur Star Schema untuk optimalisasi analisis dan pelaporan. Tabel fact_trips adalah tabel fakta pusat, terhubung ke berbagai tabel dimensi yang menyimpan atribut deskriptif unik.
+    * monthly_claim_summary.sql: Tabel agregasi yang merangkum total biaya klaim per bulan berdasarkan demografi.
 
-![ER Diagram](images/1.png)
+    * demographic_claim_summary.sql: Tabel agregasi yang merangkum total biaya klaim per kelompok usia dan wilayah.
 
-## 6. Proses Normalisasi Data (Per Normal Form)
+* **Data Quality Checks:** Kami juga mengimplementasikan tes kualitas data menggunakan dbt test dan paket dbt_expectations untuk memastikan integritas dan akurasi data.
 
-Proses normalisasi bertujuan untuk mengurangi redundansi data dan meningkatkan integritas data. Berikut adalah tahapan normalisasi yang diterapkan pada data perjalanan taksi:
+## Orkestrasi (Airflow)
 
-### 0. Kondisi Awal (Tabel Denormalisasi)
-Data awal di `raw.all_taxi_trips_raw` adalah tabel lebar yang mengandung banyak detail perjalanan dalam satu baris, dengan potensi redundansi untuk atribut yang bergantung pada ID tertentu (misalnya, deskripsi vendor, zona lokasi).
+Seluruh pipeline diotomatisasi menggunakan Apache Airflow dengan konfigurasi Docker. Alur kerja (DAG) terdiri dari serangkaian tugas yang berjalan secara berurutan:
 
-### 1. First Normal Form (1NF)
-* **Definisi:** Setiap kolom berisi nilai tunggal (atomik) dan tidak ada grup berulang. Setiap baris unik.
-* **Penerapan:** Data yang dimuat ke skema `raw` sudah memenuhi 1NF. Proses *parsing* file Parquet/CSV dan penanganan konsolidasi kolom `pickup_datetime`/`dropoff_datetime` memastikan atomisitas dan tidak adanya grup berulang.
+* **download_data_task:** Mengunduh data dari Kaggle.
 
-### 2. Second Normal Form (2NF)
-* **Definisi:** Sudah dalam 1NF, dan semua atribut non-kunci sepenuhnya bergantung pada *seluruh* Primary Key.
-* **Penerapan:** Tabel `raw.all_taxi_trips_raw` memiliki Primary Key komposit yang besar. Atribut seperti `zone`, `borough` (yang bergantung hanya pada `location_id`), atau deskripsi `payment_type` (yang bergantung hanya pada `payment_type_id`) merupakan *partial dependency*. Untuk mengatasi ini, atribut-atribut ini dipindahkan ke tabel dimensi terpisah (`dim_location`, `dim_vendor`, `dim_payment_type`, `dim_rate_code`, `dim_date`, `dim_time`), di mana setiap atribut non-kunci di tabel dimensi tersebut sepenuhnya bergantung pada Primary Key tabel dimensi itu sendiri.
+* **ingest_data_task:** Memuat data ke BigQuery.
 
-### 3. Third Normal Form (3NF)
-* **Definisi:** Sudah dalam 2NF, dan tidak ada *transitive dependency* (tidak ada atribut non-kunci yang bergantung pada atribut non-kunci lainnya).
-* **Penerapan:** Dengan pemisahan ke tabel-tabel dimensi, kami memastikan bahwa semua atribut non-kunci di setiap tabel dimensi secara langsung bergantung pada Primary Key tabel dimensi tersebut. Tabel `fact_trips` kemudian menyimpan metrik perjalanan dan Foreign Key ke tabel-tabel dimensi, memastikan bahwa semua metrik secara langsung bergantung pada kombinasi Foreign Key yang membentuk Primary Key tabel fakta. Ini secara efektif menghilangkan ketergantungan transitif.
+* **run_dbt_models_task:** Menjalankan semua model dbt untuk transformasi data.
+
+* **run_dbt_tests_task:** Menjalankan tes kualitas data.
+
+Selain itu, DAG juga dilengkapi dengan notifikasi ke Discord yang akan terpicu jika ada tugas yang gagal.
+
+## Hasil Analisis (Dashboard)
+
+Dashboard yang dibangun di Looker Studio menyajikan visualisasi data yang komprehensif, termasuk:
+
+* Grafik garis yang menunjukkan tren total biaya klaim dari bulan ke bulan.
+
+* Bagan lingkaran yang memvisualisasikan total biaya klaim berdasarkan jenis kelamin pasien.
+
+![dashboard](images/Dashboard.jpg)
+
+
+# ##Instruksi Setup
+Untuk menjalankan proyek ini, ikuti langkah-langkah berikut:
+
+Clone repositori ini: git clone [URL_REPOSITORI_ANDA]
+
+Pastikan Docker sudah terinstal.
+
+Konfigurasi docker-compose.yml dengan path yang sesuai.
+
+Jalankan docker-compose up -d --build --force-recreate.
+
+Akses Airflow UI di http://localhost:8080, aktifkan DAG elt_cms_claims_dag, dan jalankan secara manual.
